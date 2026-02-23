@@ -216,8 +216,12 @@ class BrowserService {
     }
 
     // 每次请求独立 page，执行完即销毁，支持并发
+    // 必须先导航到目标域名，否则 about:blank 页面无法发出跨域 fetch
     const page = await session.context.newPage();
     try {
+      const targetOrigin = new URL(url).origin;
+      await page.goto(targetOrigin, { waitUntil: 'domcontentloaded', timeout: 15000 });
+
       const result = await page.evaluate(
         async ({ url, method, headers, body }) => {
           const resp = await fetch(url, {
