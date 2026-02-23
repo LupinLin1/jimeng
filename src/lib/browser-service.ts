@@ -1,4 +1,4 @@
-import { chromium, Browser, BrowserContext, Page } from 'playwright-core';
+import { chromium, Browser, BrowserContext } from 'playwright-core';
 import logger from './logger.ts';
 import {
   SESSION_IDLE_TIMEOUT,
@@ -11,12 +11,15 @@ import {
 
 /**
  * 浏览器会话接口
+ * 每个 sessionId 对应一个隔离的 BrowserContext（共享 Cookie/bdms 状态）
+ * Page 不再持久化，每次请求临时创建，用完销毁，支持同 session 并发
  */
 interface BrowserSession {
   context: BrowserContext;
-  page: Page;
   lastUsed: number;
   idleTimer: NodeJS.Timeout;
+  /** 创建锁：防止同一 sessionId 并发初始化时重复创建 context */
+  ready: Promise<void>;
 }
 
 /**
@@ -24,14 +27,16 @@ interface BrowserSession {
  *
  * 负责:
  * - 启动和管理 Chromium 浏览器实例
- * - 为每个 sessionId 创建隔离的浏览器上下文
- * - 在浏览器环境中执行 HTTP 请求
+ * - 为每个 sessionId 创建隔离的浏览器上下文（复用，持久化 bdms/Cookie）
+ * - 每次请求创建独立 Page，执行完后销毁（支持同 sessionId 并发）
  * - 管理会话生命周期 (10分钟空闲超时)
  */
 class BrowserService {
   private browser: Browser | null = null;
   private sessions: Map<string, BrowserSession> = new Map();
   private available: boolean = false;
+  /** 全局创建锁：防止 getSession 并发时对同一 sessionId 重复初始化 */
+  private creatingSession: Map<string, Promise<BrowserSession>> = new Map();
 
   /**
    * 初始化浏览器服务
@@ -68,39 +73,22 @@ class BrowserService {
   }
 
   /**
-   * 获取或创建浏览器会话
-   *
-   * @param sessionId 用户会话ID
-   * @param webId Web ID
-   * @param userId 用户ID
+   * 创建新的 BrowserContext（内部方法）
+   * 负责注入 Cookie、配置资源拦截、等待 bdms SDK
    */
-  async getSession(sessionId: string, webId: string, userId: string): Promise<BrowserSession> {
-    // 检查是否已存在会话
-    const existing = this.sessions.get(sessionId);
-    if (existing) {
-      existing.lastUsed = Date.now();
-      if (existing.idleTimer) {
-        clearTimeout(existing.idleTimer);
-      }
-      existing.idleTimer = setTimeout(
-        () => this.closeSession(sessionId),
-        SESSION_IDLE_TIMEOUT
-      );
-      logger.debug(`[browser] 复用现有会话: ${sessionId.substring(0, 8)}...`);
-      return existing;
-    }
-
-    // 创建新会话
-    logger.info(`[browser] 创建新会话: ${sessionId.substring(0, 8)}...`);
+  private async createContext(
+    sessionId: string,
+    webId: string,
+    userId: string
+  ): Promise<BrowserContext> {
     const browser = await this.ensureBrowser();
 
-    // 创建浏览器上下文
     const context = await browser.newContext({
       userAgent: BROWSER_USER_AGENT,
     });
 
     // 注入 Cookie
-    const cookies = [
+    await context.addCookies([
       { name: '_tea_web_id', value: String(webId), domain: '.jianying.com', path: '/' },
       { name: 'is_staff_user', value: 'false', domain: '.jianying.com', path: '/' },
       { name: 'store-region', value: 'cn-gd', domain: '.jianying.com', path: '/' },
@@ -108,8 +96,7 @@ class BrowserService {
       { name: 'sid_tt', value: sessionId, domain: '.jianying.com', path: '/' },
       { name: 'sessionid', value: sessionId, domain: '.jianying.com', path: '/' },
       { name: 'sessionid_ss', value: sessionId, domain: '.jianying.com', path: '/' },
-    ];
-    await context.addCookies(cookies);
+    ]);
 
     // 阻止非必要资源加载
     await context.route('**/*', (route) => {
@@ -131,19 +118,16 @@ class BrowserService {
       return route.continue();
     });
 
-    // 创建页面
-    const page = await context.newPage();
-
-    // 导航到即梦首页
+    // 用临时 page 导航到即梦首页，等待 bdms SDK 加载完成后销毁
+    const initPage = await context.newPage();
     logger.info(`[browser] 正在导航到 jimeng.jianying.com (session: ${sessionId.substring(0, 8)}...)`);
-    await page.goto('https://jimeng.jianying.com', {
+    await initPage.goto('https://jimeng.jianying.com', {
       waitUntil: 'domcontentloaded',
       timeout: 30000,
     });
 
-    // 等待 bdms SDK 加载
     try {
-      await page.waitForFunction(
+      await initPage.waitForFunction(
         () => {
           return (
             (window as any).bdms?.init ||
@@ -158,30 +142,59 @@ class BrowserService {
       logger.warn('[browser] bdms SDK 等待超时,继续尝试...');
     }
 
-    // 创建会话对象
-    const session: BrowserSession = {
-      context,
-      page,
-      lastUsed: Date.now(),
-      idleTimer: setTimeout(
-        () => this.closeSession(sessionId),
-        SESSION_IDLE_TIMEOUT
-      ),
-    };
+    // 初始化页面用完即销毁
+    await initPage.close();
 
-    this.sessions.set(sessionId, session);
-    logger.info(`[browser] 会话已创建 (session: ${sessionId.substring(0, 8)}...)`);
-    return session;
+    return context;
+  }
+
+  /**
+   * 获取或创建浏览器会话（带创建锁，防并发重复初始化）
+   */
+  async getSession(sessionId: string, webId: string, userId: string): Promise<BrowserSession> {
+    // 已有会话直接返回
+    const existing = this.sessions.get(sessionId);
+    if (existing) {
+      existing.lastUsed = Date.now();
+      clearTimeout(existing.idleTimer);
+      existing.idleTimer = setTimeout(() => this.closeSession(sessionId), SESSION_IDLE_TIMEOUT);
+      return existing;
+    }
+
+    // 若已有同 sessionId 的创建任务在进行，等它完成
+    const creating = this.creatingSession.get(sessionId);
+    if (creating) {
+      logger.debug(`[browser] 等待已有创建任务完成 (session: ${sessionId.substring(0, 8)}...)`);
+      await creating;
+      return this.sessions.get(sessionId)!;
+    }
+
+    // 发起创建，并注册到 creatingSession 防止并发重入
+    logger.info(`[browser] 创建新会话: ${sessionId.substring(0, 8)}...`);
+    const createPromise = (async (): Promise<BrowserSession> => {
+      try {
+        const context = await this.createContext(sessionId, webId, userId);
+        const session: BrowserSession = {
+          context,
+          lastUsed: Date.now(),
+          idleTimer: setTimeout(() => this.closeSession(sessionId), SESSION_IDLE_TIMEOUT),
+          ready: Promise.resolve(),
+        };
+        this.sessions.set(sessionId, session);
+        logger.info(`[browser] 会话已创建 (session: ${sessionId.substring(0, 8)}...)`);
+        return session;
+      } finally {
+        this.creatingSession.delete(sessionId);
+      }
+    })();
+
+    this.creatingSession.set(sessionId, createPromise);
+    return createPromise;
   }
 
   /**
    * 在浏览器中执行 HTTP 请求
-   *
-   * @param sessionId 用户会话ID
-   * @param webId Web ID
-   * @param userId 用户ID
-   * @param url 请求URL
-   * @param options 请求选项
+   * 每次调用创建独立 Page，执行完后销毁，支持同 sessionId 并发
    */
   async fetch(
     sessionId: string,
@@ -202,34 +215,35 @@ class BrowserService {
       logger.info(`[browser] 请求体: ${body.substring(0, 1000)}...`);
     }
 
-    const result = await session.page.evaluate(
-      async ({ url, method, headers, body }) => {
-        const resp = await fetch(url, {
-          method,
-          headers,
-          body: body || undefined,
-          credentials: 'include',
-        });
-        return resp.json();
-      },
-      { url, method, headers, body }
-    );
-
-    return result;
+    // 每次请求独立 page，执行完即销毁，支持并发
+    const page = await session.context.newPage();
+    try {
+      const result = await page.evaluate(
+        async ({ url, method, headers, body }) => {
+          const resp = await fetch(url, {
+            method,
+            headers,
+            body: body || undefined,
+            credentials: 'include',
+          });
+          return resp.json();
+        },
+        { url, method, headers, body }
+      );
+      return result;
+    } finally {
+      await page.close().catch(() => {});
+    }
   }
 
   /**
    * 关闭指定会话
-   *
-   * @param sessionId 用户会话ID
    */
   async closeSession(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    if (session.idleTimer) {
-      clearTimeout(session.idleTimer);
-    }
+    clearTimeout(session.idleTimer);
 
     try {
       await session.context.close();
@@ -248,34 +262,22 @@ class BrowserService {
   async close(): Promise<void> {
     logger.info('[browser] 正在关闭浏览器服务...');
 
-    // 关闭所有会话
     const sessionCount = this.sessions.size;
     logger.info(`[browser] 关闭 ${sessionCount} 个活动会话...`);
     for (const [sessionId] of this.sessions) {
       await this.closeSession(sessionId);
     }
 
-    // 关闭浏览器
     if (this.browser) {
       try {
         logger.info('[browser] 正在关闭 Chromium 实例...');
-        const closeStart = Date.now();
-
-        // 直接调用 close，不使用超时
-        // 如果它挂起，那是 Playwright 的问题
         await this.browser.close();
-
-        const closeDuration = Date.now() - closeStart;
         this.browser = null;
-        logger.info(`[browser] Chromium 已关闭 (耗时: ${closeDuration}ms)`);
+        logger.info('[browser] Chromium 已关闭');
       } catch (error: any) {
         logger.warn(`[browser] 关闭 Chromium 失败: ${error.message}`);
-        // 即使失败也清理引用
         this.browser = null;
       }
-      logger.info('[browser] 浏览器关闭操作完成');
-    } else {
-      logger.warn('[browser] 浏览器实例为空，跳过关闭');
     }
 
     this.available = false;
