@@ -1,4 +1,5 @@
 import logger from './logger.js';
+import browserService from './browser-service.js';
 
 // 允许无限量的监听器
 process.setMaxListeners(Infinity);
@@ -26,3 +27,14 @@ process.on("SIGTERM", () => {
 process.on("SIGINT", () => {
     process.exit(0);
 });
+
+// 初始化浏览器代理服务
+(async () => {
+  try {
+    await browserService.initialize();
+  } catch (error: any) {
+    logger.warn(`浏览器代理服务启动失败: ${error.message}`);
+    logger.warn('seedance 模型请求可能会失败,请确保 Chromium 已正确安装');
+    // 不阻止应用启动
+  }
+})();
