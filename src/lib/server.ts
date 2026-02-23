@@ -12,6 +12,7 @@ import FailureBody from './response/FailureBody.ts';
 import EX from './consts/exceptions.ts';
 import logger from './logger.ts';
 import config from './config.ts';
+import browserService from './browser-service.ts';
 
 class Server {
 
@@ -261,6 +262,36 @@ class Server {
             })
         ]);
         logger.success(`Server listening on port ${port} (${host})`);
+
+        // 注册优雅关闭处理
+        this.#setupGracefulShutdown();
+    }
+
+    /**
+     * 设置优雅关闭
+     */
+    #setupGracefulShutdown() {
+        const shutdown = async (signal: string) => {
+            logger.warn(`收到 ${signal} 信号,开始优雅关闭...`);
+
+            try {
+                // 关闭浏览器服务
+                await browserService.close();
+                logger.info('浏览器服务已关闭');
+            } catch (error: any) {
+                logger.error(`关闭浏览器服务失败: ${error.message}`);
+            }
+
+            logger.info('服务已优雅关闭');
+            process.exit(signal === 'SIGTERM' ? 2 : 0);
+        };
+
+        // 覆盖 initialize.ts 中的默认处理器
+        process.removeAllListeners('SIGTERM');
+        process.removeAllListeners('SIGINT');
+
+        process.on('SIGTERM', () => shutdown('SIGTERM'));
+        process.on('SIGINT', () => shutdown('SIGINT'));
     }
 
 }

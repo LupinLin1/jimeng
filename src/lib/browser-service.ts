@@ -1,6 +1,5 @@
 import { chromium, Browser, BrowserContext, Page } from 'playwright-core';
 import logger from './logger.ts';
-import util from './util.ts';
 import {
   SESSION_IDLE_TIMEOUT,
   BDMS_READY_TIMEOUT,
