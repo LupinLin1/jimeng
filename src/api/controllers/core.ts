@@ -29,37 +29,78 @@ import {
   REGION_JP,
   REGION_SG,
   VERSION_CODE,
-  RETRY_CONFIG
+  RETRY_CONFIG,
+  ANTI_DETECTION_CONFIG
 } from "@/api/consts/common.ts";
 
 // 模型名称
 const MODEL_NAME = "jimeng";
 // 设备ID
-const DEVICE_ID = Math.random() * 999999999999999999 + 7000000000000000000;
+export const DEVICE_ID = Math.random() * 999999999999999999 + 7000000000000000000;
 // WebID
-const WEB_ID = Math.random() * 999999999999999999 + 7000000000000000000;
+export const WEB_ID = Math.random() * 999999999999999999 + 7000000000000000000;
 // 用户ID
-const USER_ID = util.uuid(false);
+export const USER_ID = util.uuid(false);
 // 伪装headers
 const FAKE_HEADERS = {
   Accept: "application/json, text/plain, */*",
   "Accept-Encoding": "gzip, deflate, br, zstd",
-  "Accept-language": "zh-CN,zh;q=0.9",
-  "Cache-control": "no-cache",
+  "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+  "Cache-Control": "no-cache",
   Appvr: VERSION_CODE,
   Pragma: "no-cache",
   Priority: "u=1, i",
   Pf: PLATFORM_CODE,
-  "Sec-Ch-Ua": '"Google Chrome";v="142", "Chromium";v="142", "Not_A Brand";v="99"',
+  "Sec-Ch-Ua": '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
   "Sec-Ch-Ua-Mobile": "?0",
-  "Sec-Ch-Ua-Platform": '"Windows"',
+  "Sec-Ch-Ua-Platform": '"macOS"',
+  "Sec-Ch-Ua-Platform-Version": '"10.15.7"',
+  "Sec-Ch-Ua-Arch": '"x86"',
+  "Sec-Ch-Ua-Bitness": '"64"',
   "Sec-Fetch-Dest": "empty",
   "Sec-Fetch-Mode": "cors",
   "Sec-Fetch-Site": "same-origin",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+  "Sec-Fetch-User": "?1",
+  "Upgrade-Insecure-Requests": "1",
+  "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
 };
 // 文件最大大小
 const FILE_MAX_SIZE = 100 * 1024 * 1024;
+
+// 上次请求时间戳（用于请求限流）
+let lastRequestTime = 0;
+
+/**
+ * 请求延迟函数
+ * 确保两次请求之间有最小间隔，避免触发风控
+ */
+async function enforceRequestDelay() {
+  if (!ANTI_DETECTION_CONFIG.ENABLE_RANDOM_DELAY) {
+    return;
+  }
+
+  const now = Date.now();
+  const timeSinceLastRequest = now - lastRequestTime;
+
+  // 计算需要的延迟时间
+  let delay = 0;
+  if (timeSinceLastRequest < ANTI_DETECTION_CONFIG.MIN_REQUEST_DELAY) {
+    // 如果距离上次请求时间太短，等待到最小间隔
+    delay = ANTI_DETECTION_CONFIG.MIN_REQUEST_DELAY - timeSinceLastRequest;
+  } else {
+    // 否则添加随机延迟，模拟真实用户行为
+    const randomDelay = Math.random() *
+      (ANTI_DETECTION_CONFIG.MAX_REQUEST_DELAY - ANTI_DETECTION_CONFIG.MIN_REQUEST_DELAY);
+    delay = randomDelay;
+  }
+
+  if (delay > 0) {
+    logger.info(`防风控延迟: ${(delay / 1000).toFixed(2)}秒`);
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+
+  lastRequestTime = Date.now();
+}
 
 /**
  * 获取缓存中的access_token
@@ -338,6 +379,11 @@ export async function request(
   let retries = 0;
   const maxRetries = RETRY_CONFIG.MAX_RETRY_COUNT;
   let lastError = null;
+
+  // 首次请求前应用延迟（非重试时）
+  if (retries === 0) {
+    await enforceRequestDelay();
+  }
 
   while (retries <= maxRetries) {
     try {

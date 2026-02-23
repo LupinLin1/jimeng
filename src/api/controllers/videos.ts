@@ -6,8 +6,9 @@ import APIException from "@/lib/exceptions/APIException.ts";
 
 import EX from "@/api/consts/exceptions.ts";
 import util from "@/lib/util.ts";
-import { getCredit, receiveCredit, request, parseRegionFromToken, getAssistantId, checkImageContent, RegionInfo } from "./core.ts";
+import { getCredit, receiveCredit, request, parseRegionFromToken, parseProxyFromToken, getAssistantId, checkImageContent, RegionInfo, WEB_ID, USER_ID } from "./core.ts";
 import logger from "@/lib/logger.ts";
+import browserService from "@/lib/browser-service.ts";
 import { SmartPoller, PollingStatus } from "@/lib/smart-poller.ts";
 import { DEFAULT_ASSISTANT_ID_CN, DEFAULT_ASSISTANT_ID_US, DEFAULT_ASSISTANT_ID_HK, DEFAULT_ASSISTANT_ID_JP, DEFAULT_ASSISTANT_ID_SG, DEFAULT_VIDEO_MODEL, DRAFT_VERSION, DRAFT_VERSION_OMNI, OMNI_BENEFIT_TYPE, OMNI_BENEFIT_TYPE_FAST, VIDEO_MODEL_MAP, VIDEO_MODEL_MAP_US, VIDEO_MODEL_MAP_ASIA } from "@/api/consts/common.ts";
 import { uploadImageBuffer } from "@/lib/image-uploader.ts";
@@ -820,13 +821,79 @@ export async function generateVideo(
     };
   }
 
+  }
+
   // 发送请求
-  const { aigc_data } = await request(
-    "post",
-    "/mweb/v1/aigc_draft/generate",
-    refreshToken,
-    requestData
-  );
+  // 判断是否为 seedance 模型
+  const isSeedanceModel = model.includes("seedance") ||
+                        model.includes("40_pro") ||
+                        model.includes("40");
+
+  let aigcData: any;
+  if (isSeedanceModel) {
+    // 使用浏览器代理
+    if (!browserService.isAvailable()) {
+      throw new APIException(
+        EX.API_REQUEST_FAILED,
+        '浏览器代理服务不可用,请确保 Chromium 已正确安装。运行: npx playwright-core install chromium'
+      );
+    }
+
+    // 解析 token 和 region
+    const { token: tokenWithRegion } = parseProxyFromToken(refreshToken);
+    const sessionId = (regionInfo.isInternational)
+      ? tokenWithRegion.substring(3)
+      : tokenWithRegion;
+
+    // 构建完整 URL
+    let baseUrl: string;
+    if (regionInfo.isUS) {
+      baseUrl = "https://dreamina-api.us.capcut.com";
+    } else if (regionInfo.isHK || regionInfo.isJP || regionInfo.isSG) {
+      baseUrl = "https://mweb-api-sg.capcut.com";
+    } else {
+      baseUrl = "https://jimeng.jianying.com";
+    }
+    const fullUrl = `${baseUrl}/mweb/v1/aigc_draft/generate`;
+
+    logger.info(`使用浏览器代理请求 seedance 模型: ${model}`);
+
+    const result = await browserService.fetch(
+      sessionId,
+      String(WEB_ID),
+      USER_ID,
+      fullUrl,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData),
+      }
+    );
+
+    // 检查浏览器代理返回的结果
+    if (result.ret !== undefined && String(result.ret) !== '0') {
+      const retCode = String(result.ret);
+      const errMsg = result.errmsg || result.message || retCode;
+
+      // 积分不足
+      if (retCode === '5000') {
+        throw new APIException(EX.API_REQUEST_FAILED, '即梦积分不足,请前往即梦官网领取积分');
+      }
+
+      throw new APIException(EX.API_REQUEST_FAILED, `即梦API错误 (ret=${retCode}): ${errMsg}`);
+    }
+
+    // 浏览器代理返回的数据结构可能不同,需要提取 aigc_data
+    aigcData = result.data;
+  } else {
+    // 使用普通 HTTP 请求
+    const response = await request("POST", "/mweb/v1/aigc_draft/generate", refreshToken, requestData);
+    aigcData = response;
+  }
+
+  const { aigc_data } = aigcData;
 
   const historyId = aigc_data.history_record_id;
   if (!historyId)
