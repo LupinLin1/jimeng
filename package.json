@@ -18,7 +18,8 @@
     "build": "tsup src/index.ts --format cjs,esm --sourcemap --dts --clean",
     "test": "echo \"Error: no test specified\" && exit 1",
     "format": "prettier --write \"src/**/*.{ts,js,json}\"",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "postinstall": "npx playwright-core install chromium"
   },
   "author": "Jimeng API Team",
   "license": "GPL-3.0",
@@ -56,6 +57,7 @@
     "lodash": "^4.17.21",
     "mime": "^4.0.1",
     "minimist": "^1.2.8",
+    "playwright-core": "^1.49.0",
     "randomstring": "^1.3.0",
     "semver": "^7.7.2",
     "socks-proxy-agent": "^8.0.5",
