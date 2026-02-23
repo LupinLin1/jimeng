@@ -17,6 +17,7 @@
     "start": "node --enable-source-maps --no-node-snapshot dist/index.js",
     "build": "tsup src/index.ts --format cjs,esm --sourcemap --dts --clean",
     "test": "echo \"Error: no test specified\" && exit 1",
+    "test:browser": "tsx test/manual/browser-service.test.ts",
     "format": "prettier --write \"src/**/*.{ts,js,json}\"",
     "type-check": "tsc --noEmit",
     "postinstall": "npx playwright-core install chromium"
@@ -68,6 +69,7 @@
     "@types/lodash": "^4.14.202",
     "@types/mime": "^3.0.4",
     "tsup": "^8.0.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.3.3"
   }
 }
