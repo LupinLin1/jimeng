@@ -23,6 +23,7 @@
 - 📊 **Detailed Logs**: Structured logging for easy debugging.
 - 🐳 **Docker Support**: Containerized deployment, ready to use out of the box.
 - ⚙️ **Log Level Control**: Dynamically adjust log output level through configuration files.
+- 🌐 **浏览器代理**: 为 seedance 模型提供 Playwright 浏览器代理,绕过 shark 反爬机制
 
 ## ⭐ Star History
 
@@ -76,7 +77,8 @@ curl -X POST http://localhost:5100/v1/images/generations \
 
 ### Environment Requirements
 
-- Node.js 18+
+- **Node.js** >= 18
+- **Chromium 浏览器** (通过 npm 自动安装,约 300MB)
 - npm or yarn
 - Docker (optional)
 
@@ -108,7 +110,7 @@ docker run --rm \
 git clone <repository-url>
 cd jimeng-api
 
-# Install dependencies
+# Install dependencies (会自动下载 Chromium)
 npm install
 
 # Build files
@@ -117,6 +119,8 @@ npm run build
 # Start the service
 npm run dev
 ```
+
+**注意**: 首次安装时会自动下载 Chromium 浏览器 (约 300MB),请确保网络连接正常。
 
 #### Method 3: Docker Deployment (recommended)
 
@@ -811,6 +815,30 @@ export const RETRY_CONFIG = {
 4.  **Insufficient Credits**
     -   Go to the Jimeng/Dreamina official website to check your credit balance.
     -   The API returns detailed credit info.
+
+### Chromium 下载失败
+
+如果 `npm install` 时 Chromium 下载失败,可以手动安装:
+
+```bash
+npx playwright-core install chromium
+```
+
+### 浏览器代理服务不可用
+
+如果遇到"浏览器代理服务不可用"错误:
+
+1. 检查 Chromium 是否已安装:
+   ```bash
+   npx playwright-core install --dry-run chromium
+   ```
+
+2. 重新安装 Chromium:
+   ```bash
+   npx playwright-core install chromium --force
+   ```
+
+3. 检查服务器内存是否足够 (建议至少 512MB 可用内存)
 
 ## 🙏 Acknowledgements
 
