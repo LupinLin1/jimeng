@@ -35,13 +35,13 @@ export const DEFAULT_IMAGE_MODEL_US = "jimeng-4.5";
 export const DEFAULT_VIDEO_MODEL = "jimeng-video-3.5-pro";
 
 // 草稿版本
-export const DRAFT_VERSION = "3.3.8";
+export const DRAFT_VERSION = "3.3.9";
 export const DRAFT_MIN_VERSION = "3.0.2";
 export const DRAFT_VERSION_OMNI = "3.3.9";
 
-// omni_reference 模式专用 benefit_type
-export const OMNI_BENEFIT_TYPE = "dreamina_video_seedance_20_video_add";
-export const OMNI_BENEFIT_TYPE_FAST = "dreamina_seedance_20_fast_with_video";
+// omni_reference 模式专用 benefit_type (必须与普通模式使用相同的 benefit_type)
+export const OMNI_BENEFIT_TYPE = "dreamina_video_seedance_20_pro";
+export const OMNI_BENEFIT_TYPE_FAST = "dreamina_seedance_20_fast";
 
 // 图像模型映射
 export const IMAGE_MODEL_MAP = {
@@ -128,6 +128,13 @@ export const POLLING_CONFIG = {
   POLL_INTERVAL: 5000,   // 轮询间隔 5 秒
   STABLE_ROUNDS: 5,      // 稳定轮次
   TIMEOUT_SECONDS: 900   // 默认超时 15 分钟
+};
+
+// 防风控配置
+export const ANTI_DETECTION_CONFIG = {
+  MIN_REQUEST_DELAY: 2000,  // 最小请求间隔 2 秒
+  MAX_REQUEST_DELAY: 5000,  // 最大请求间隔 5 秒
+  ENABLE_RANDOM_DELAY: true, // 启用随机延迟
 };
 
 // 支持的图片比例和分辨率

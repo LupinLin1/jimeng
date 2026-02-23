@@ -537,90 +537,83 @@ export async function generateVideo(
     const omniBenefitType = is40 ? OMNI_BENEFIT_TYPE_FAST : OMNI_BENEFIT_TYPE;
 
     requestData = {
-      params: {
-        aigc_features: "app_lip_sync",
-        web_version: "7.5.0",
-        da_version: DRAFT_VERSION_OMNI,
-      },
-      data: {
-        extend: {
-          root_model: model,
-          m_video_commerce_info: {
-            benefit_type: omniBenefitType,
-            resource_id: "generate_video",
-            resource_id_type: "str",
-            resource_sub_type: "aigc",
-          },
-          m_video_commerce_info_list: [{
-            benefit_type: omniBenefitType,
-            resource_id: "generate_video",
-            resource_id_type: "str",
-            resource_sub_type: "aigc",
-          }],
+      extend: {
+        root_model: model,
+        m_video_commerce_info: {
+          benefit_type: omniBenefitType,
+          resource_id: "generate_video",
+          resource_id_type: "str",
+          resource_sub_type: "aigc",
         },
-        submit_id: util.uuid(),
-        metrics_extra: metricsExtra,
-        draft_content: JSON.stringify({
-          type: "draft",
-          id: util.uuid(),
-          min_version: DRAFT_VERSION_OMNI,
-          min_features: ["AIGC_Video_UnifiedEdit"],
-          is_from_tsn: true,
-          version: DRAFT_VERSION_OMNI,
-          main_component_id: componentId,
-          component_list: [{
-            type: "video_base_component",
-            id: componentId,
-            min_version: "1.0.0",
-            aigc_mode: "workbench",
-            metadata: {
-              type: "",
+        m_video_commerce_info_list: [{
+          benefit_type: omniBenefitType,
+          resource_id: "generate_video",
+          resource_id_type: "str",
+          resource_sub_type: "aigc",
+        }],
+      },
+      submit_id: util.uuid(),
+      metrics_extra: metricsExtra,
+      draft_content: JSON.stringify({
+        type: "draft",
+        id: util.uuid(),
+        min_version: DRAFT_VERSION_OMNI,
+        min_features: ["AIGC_Video_UnifiedEdit"],
+        is_from_tsn: true,
+        version: DRAFT_VERSION_OMNI,
+        main_component_id: componentId,
+        component_list: [{
+          type: "video_base_component",
+          id: componentId,
+          min_version: "1.0.0",
+          aigc_mode: "workbench",
+          metadata: {
+            type: "",
+            id: util.uuid(),
+            created_platform: 3,
+            created_platform_version: "",
+            created_time_in_ms: Date.now().toString(),
+            created_did: "",
+          },
+          generate_type: "gen_video",
+          abilities: {
+            type: "",
+            id: util.uuid(),
+            gen_video: {
               id: util.uuid(),
-              created_platform: 3,
-              created_platform_version: "",
-              created_time_in_ms: Date.now().toString(),
-              created_did: "",
-            },
-            generate_type: "gen_video",
-            abilities: {
               type: "",
-              id: util.uuid(),
-              gen_video: {
-                id: util.uuid(),
+              text_to_video_params: {
                 type: "",
-                text_to_video_params: {
+                id: util.uuid(),
+                video_gen_inputs: [{
                   type: "",
                   id: util.uuid(),
-                  video_gen_inputs: [{
+                  min_version: DRAFT_VERSION_OMNI,
+                  prompt: "",
+                  video_mode: 2,
+                  fps: 24,
+                  duration_ms: durationMs,
+                  unified_edit_input: {
                     type: "",
                     id: util.uuid(),
-                    min_version: DRAFT_VERSION_OMNI,
-                    prompt: "",
-                    video_mode: 2,
-                    fps: 24,
-                    duration_ms: durationMs,
-                    unified_edit_input: {
-                      type: "",
-                      id: util.uuid(),
-                      material_list,
-                      meta_list,
-                    },
-                    idip_meta_list: [],
-                  }],
-                  video_aspect_ratio: ratio,
-                  seed: Math.floor(Math.random() * 100000000) + 2500000000,
-                  model_req_key: model,
-                  priority: 0,
-                },
-                video_task_extra: metricsExtra,
+                    material_list,
+                    meta_list,
+                  },
+                  idip_meta_list: [],
+                }],
+                video_aspect_ratio: ratio,
+                seed: Math.floor(Math.random() * 1000000000),
+                model_req_key: model,
+                priority: 0,
               },
+              video_task_extra: metricsExtra,
             },
-            process_type: 1,
-          }],
-        }),
-        http_common_info: {
-          aid: getAssistantId(regionInfo),
-        },
+          },
+          process_type: 1,
+        }],
+      }),
+      http_common_info: {
+        aid: getAssistantId(regionInfo),
       },
     };
   } else {
@@ -736,87 +729,80 @@ export async function generateVideo(
     logger.info(`视频生成模式: ${uploadIDs.length}张图片 (首帧: ${!!first_frame_image}, 尾帧: ${!!end_frame_image}), resolution: ${resolution}`);
 
     requestData = {
-      params: {
-        aigc_features: "app_lip_sync",
-        web_version: "7.5.0",
-        da_version: DRAFT_VERSION,
-      },
-      data: {
-        extend: {
-          root_model: model,
-          m_video_commerce_info: {
-            benefit_type: getVideoBenefitType(model),
-            resource_id: "generate_video",
-            resource_id_type: "str",
-            resource_sub_type: "aigc",
-          },
-          m_video_commerce_info_list: [{
-            benefit_type: getVideoBenefitType(model),
-            resource_id: "generate_video",
-            resource_id_type: "str",
-            resource_sub_type: "aigc",
-          }],
+      extend: {
+        root_model: model,
+        m_video_commerce_info: {
+          benefit_type: getVideoBenefitType(model),
+          resource_id: "generate_video",
+          resource_id_type: "str",
+          resource_sub_type: "aigc",
         },
-        submit_id: util.uuid(),
-        metrics_extra: metricsExtra,
-        draft_content: JSON.stringify({
-          type: "draft",
-          id: util.uuid(),
-          min_version: "3.0.5",
-          min_features: [],
-          is_from_tsn: true,
-          version: DRAFT_VERSION,
-          main_component_id: componentId,
-          component_list: [{
-            type: "video_base_component",
-            id: componentId,
-            min_version: "1.0.0",
-            aigc_mode: "workbench",
-            metadata: {
-              type: "",
+        m_video_commerce_info_list: [{
+          benefit_type: getVideoBenefitType(model),
+          resource_id: "generate_video",
+          resource_id_type: "str",
+          resource_sub_type: "aigc",
+        }],
+      },
+      submit_id: util.uuid(),
+      metrics_extra: metricsExtra,
+      draft_content: JSON.stringify({
+        type: "draft",
+        id: util.uuid(),
+        min_version: "3.0.5",
+        min_features: [],
+        is_from_tsn: true,
+        version: DRAFT_VERSION,
+        main_component_id: componentId,
+        component_list: [{
+          type: "video_base_component",
+          id: componentId,
+          min_version: "1.0.0",
+          aigc_mode: "workbench",
+          metadata: {
+            type: "",
+            id: util.uuid(),
+            created_platform: 3,
+            created_platform_version: "",
+            created_time_in_ms: Date.now().toString(),
+            created_did: "",
+          },
+          generate_type: "gen_video",
+          abilities: {
+            type: "",
+            id: util.uuid(),
+            gen_video: {
               id: util.uuid(),
-              created_platform: 3,
-              created_platform_version: "",
-              created_time_in_ms: Date.now().toString(),
-              created_did: "",
-            },
-            generate_type: "gen_video",
-            abilities: {
               type: "",
-              id: util.uuid(),
-              gen_video: {
-                id: util.uuid(),
+              text_to_video_params: {
                 type: "",
-                text_to_video_params: {
+                id: util.uuid(),
+                video_gen_inputs: [{
                   type: "",
                   id: util.uuid(),
-                  video_gen_inputs: [{
-                    type: "",
-                    id: util.uuid(),
-                    min_version: "3.0.5",
-                    prompt,
-                    video_mode: 2,
-                    fps: 24,
-                    duration_ms: durationMs,
-                    ...(supportsResolution ? { resolution } : {}),
-                    first_frame_image,
-                    end_frame_image,
-                    idip_meta_list: [],
-                  }],
-                  video_aspect_ratio: ratio,
-                  seed: Math.floor(Math.random() * 100000000) + 2500000000,
-                  model_req_key: model,
-                  priority: 0,
-                },
-                video_task_extra: metricsExtra,
+                  min_version: "3.0.5",
+                  prompt,
+                  video_mode: 2,
+                  fps: 24,
+                  duration_ms: durationMs,
+                  ...(supportsResolution ? { resolution } : {}),
+                  first_frame_image,
+                  end_frame_image,
+                  idip_meta_list: [],
+                }],
+                video_aspect_ratio: ratio,
+                seed: Math.floor(Math.random() * 1000000000),
+                model_req_key: model,
+                priority: 0,
               },
+              video_task_extra: metricsExtra,
             },
-            process_type: 1,
-          }],
-        }),
-        http_common_info: {
-          aid: getAssistantId(regionInfo),
-        },
+          },
+          process_type: 1,
+        }],
+      }),
+      http_common_info: {
+        aid: getAssistantId(regionInfo),
       },
     };
   }
@@ -852,9 +838,21 @@ export async function generateVideo(
     } else {
       baseUrl = "https://jimeng.jianying.com";
     }
-    const fullUrl = `${baseUrl}/mweb/v1/aigc_draft/generate`;
+    const generateParams = new URLSearchParams({
+      aid: String(getAssistantId(regionInfo)),
+      device_platform: "web",
+      region: regionInfo.isInternational ? "us" : "cn",
+      webId: String(WEB_ID),
+      da_version: isSeedanceModel && (is40Pro || is40) ? DRAFT_VERSION_OMNI : DRAFT_VERSION,
+      os: "mac",
+      web_component_open_flag: "1",
+      web_version: "7.5.0",
+      aigc_features: "app_lip_sync",
+    });
+    const fullUrl = `${baseUrl}/mweb/v1/aigc_draft/generate?${generateParams}`;
 
     logger.info(`使用浏览器代理请求 seedance 模型: ${model}`);
+    logger.info(`请求数据: ${JSON.stringify(requestData).substring(0, 500)}...`);
 
     const result = await browserService.fetch(
       sessionId,
@@ -870,10 +868,13 @@ export async function generateVideo(
       }
     );
 
+    logger.info(`浏览器代理响应: ${JSON.stringify(result).substring(0, 500)}...`);
+
     // 检查浏览器代理返回的结果
     if (result.ret !== undefined && String(result.ret) !== '0') {
       const retCode = String(result.ret);
       const errMsg = result.errmsg || result.message || retCode;
+      logger.error(`API 返回错误: ret=${retCode}, errmsg=${errMsg}, 完整响应: ${JSON.stringify(result)}`);
 
       // 积分不足
       if (retCode === '5000') {

@@ -198,6 +198,9 @@ class BrowserService {
     const { method = 'GET', headers = {}, body } = options;
 
     logger.info(`[browser] 通过浏览器代理请求: ${method} ${url.substring(0, 80)}...`);
+    if (body) {
+      logger.info(`[browser] 请求体: ${body.substring(0, 1000)}...`);
+    }
 
     const result = await session.page.evaluate(
       async ({ url, method, headers, body }) => {
@@ -243,7 +246,11 @@ class BrowserService {
    * 优雅关闭时调用
    */
   async close(): Promise<void> {
+    logger.info('[browser] 正在关闭浏览器服务...');
+
     // 关闭所有会话
+    const sessionCount = this.sessions.size;
+    logger.info(`[browser] 关闭 ${sessionCount} 个活动会话...`);
     for (const [sessionId] of this.sessions) {
       await this.closeSession(sessionId);
     }
@@ -251,15 +258,28 @@ class BrowserService {
     // 关闭浏览器
     if (this.browser) {
       try {
+        logger.info('[browser] 正在关闭 Chromium 实例...');
+        const closeStart = Date.now();
+
+        // 直接调用 close，不使用超时
+        // 如果它挂起，那是 Playwright 的问题
         await this.browser.close();
-      } catch {
-        // ignore
+
+        const closeDuration = Date.now() - closeStart;
+        this.browser = null;
+        logger.info(`[browser] Chromium 已关闭 (耗时: ${closeDuration}ms)`);
+      } catch (error: any) {
+        logger.warn(`[browser] 关闭 Chromium 失败: ${error.message}`);
+        // 即使失败也清理引用
+        this.browser = null;
       }
-      this.browser = null;
-      logger.info('[browser] Chromium 已关闭');
+      logger.info('[browser] 浏览器关闭操作完成');
+    } else {
+      logger.warn('[browser] 浏览器实例为空，跳过关闭');
     }
 
     this.available = false;
+    logger.info('[browser] 浏览器服务已关闭');
   }
 
   /**
