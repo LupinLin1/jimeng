@@ -821,8 +821,6 @@ export async function generateVideo(
     };
   }
 
-  }
-
   // 发送请求
   // 判断是否为 seedance 模型
   const isSeedanceModel = model.includes("seedance") ||
