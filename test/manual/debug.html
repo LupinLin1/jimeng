@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>即梦视频生成调试</title>
+</head>
+<body>
+    <h1>即梦视频生成调试工具</h1>
+    <p>打开浏览器开发者工具 (F12) > Network 标签,然后点击下面的按钮发送请求</p>
+
+    <button onclick="testOmniMode()">测试 omni_reference 模式</button>
+    <button onclick="testTextMode()">测试纯文本模式</button>
+
+    <pre id="result"></pre>
+
+    <script>
+        const API_BASE = 'http://localhost:5100';
+        const SESSION_ID = 'cff8c2ee2af8fe709655b1417aac33ab';
+
+        async function testOmniMode() {
+            const data = {
+                model: 'jimeng-video-seedance-2.0',
+                prompt: '@image1 一只可爱的猫咪',
+                functionMode: 'omni_reference',
+                image_file_1: 'https://images.unsplash.com/photo-1574158622682-e40e69881006?w=800',
+                ratio: '16:9',
+                duration: 5
+            };
+
+            document.getElementById('result').textContent = '发送 omni_reference 模式请求...';
+
+            try {
+                const response = await fetch(`${API_BASE}/v1/videos/generations`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${SESSION_ID}`
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                document.getElementById('result').textContent = JSON.stringify(result, null, 2);
+            } catch (error) {
+                document.getElementById('result').textContent = `错误: ${error.message}`;
+            }
+        }
+
+        async function testTextMode() {
+            const data = {
+                model: 'jimeng-video-seedance-2.0',
+                prompt: '一只可爱的猫咪',
+                ratio: '16:9',
+                duration: 5
+            };
+
+            document.getElementById('result').textContent = '发送纯文本模式请求...';
+
+            try {
+                const response = await fetch(`${API_BASE}/v1/videos/generations`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${SESSION_ID}`
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                document.getElementById('result').textContent = JSON.stringify(result, null, 2);
+            } catch (error) {
+                document.getElementById('result').textContent = `错误: ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>

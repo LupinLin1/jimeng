@@ -1,4 +1,4 @@
-import { chromium, Browser, BrowserContext } from 'playwright-core';
+import { chromium, Browser, BrowserContext, Page } from 'playwright-core';
 import logger from './logger.ts';
 import {
   SESSION_IDLE_TIMEOUT,
@@ -12,14 +12,19 @@ import {
 /**
  * 浏览器会话接口
  * 每个 sessionId 对应一个隔离的 BrowserContext（共享 Cookie/bdms 状态）
- * Page 不再持久化，每次请求临时创建，用完销毁，支持同 session 并发
+ * page 持久化复用，已加载 bdms SDK，支持在页面上下文中执行 fetch（携带风控 token）
+ * 并发请求通过 fetchLock 串行化，避免多个 page.evaluate 并发冲突
  */
 interface BrowserSession {
   context: BrowserContext;
+  /** 持久化页面：已导航至即梦首页，bdms SDK 已就绪，用于执行 fetch */
+  page: Page;
   lastUsed: number;
   idleTimer: NodeJS.Timeout;
   /** 创建锁：防止同一 sessionId 并发初始化时重复创建 context */
   ready: Promise<void>;
+  /** fetch 串行锁：确保同一 page 上的 evaluate 调用不并发 */
+  fetchLock: Promise<void>;
 }
 
 /**
@@ -28,7 +33,8 @@ interface BrowserSession {
  * 负责:
  * - 启动和管理 Chromium 浏览器实例
  * - 为每个 sessionId 创建隔离的浏览器上下文（复用，持久化 bdms/Cookie）
- * - 每次请求创建独立 Page，执行完后销毁（支持同 sessionId 并发）
+ * - 每次 fetch 请求在持久化页面上通过 page.evaluate 执行（bdms SDK 自动注入风控 token）
+ * - 同一 session 并发请求通过 fetchLock 串行化（避免同一页面并发 evaluate 冲突）
  * - 管理会话生命周期 (10分钟空闲超时)
  */
 class BrowserService {
@@ -73,14 +79,14 @@ class BrowserService {
   }
 
   /**
-   * 创建新的 BrowserContext（内部方法）
-   * 负责注入 Cookie、配置资源拦截、等待 bdms SDK
+   * 创建新的 BrowserContext 和持久化页面（内部方法）
+   * 负责注入 Cookie、配置资源拦截、等待 bdms SDK、保留页面
    */
   private async createContext(
     sessionId: string,
     webId: string,
     userId: string
-  ): Promise<BrowserContext> {
+  ): Promise<{ context: BrowserContext; page: Page }> {
     const browser = await this.ensureBrowser();
 
     const context = await browser.newContext({
@@ -118,21 +124,28 @@ class BrowserService {
       return route.continue();
     });
 
-    // 用临时 page 导航到即梦首页，等待 bdms SDK 加载完成后销毁
-    const initPage = await context.newPage();
+    // 导航到即梦首页，等待 bdms SDK 加载完成
+    // 此页面持久化保留，后续 fetch 请求都在此页面执行（bdms SDK 自动注入风控 token）
+    const page = await context.newPage();
     logger.info(`[browser] 正在导航到 jimeng.jianying.com (session: ${sessionId.substring(0, 8)}...)`);
-    await initPage.goto('https://jimeng.jianying.com', {
-      waitUntil: 'domcontentloaded',
-      timeout: 30000,
-    });
+    try {
+      // 使用 domcontentloaded 等待页面 JS 执行（bdms SDK 需要 JS 运行才能注入 fetch 拦截）
+      // 资源拦截规则已放行 jianying.com 域名的脚本，DOMContentLoaded 应能正常触发
+      await page.goto('https://jimeng.jianying.com', {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000,
+      });
+    } catch (e: any) {
+      // 即使 goto 超时，页面 JS 可能已经执行，继续尝试
+      logger.warn(`[browser] 页面导航超时，继续尝试: ${e.message}`);
+    }
 
     try {
-      await initPage.waitForFunction(
+      await page.waitForFunction(
         () => {
           return (
             (window as any).bdms?.init ||
-            (window as any).byted_acrawler ||
-            window.fetch.toString().indexOf('native code') === -1
+            (window as any).byted_acrawler
           );
         },
         { timeout: BDMS_READY_TIMEOUT }
@@ -142,10 +155,7 @@ class BrowserService {
       logger.warn('[browser] bdms SDK 等待超时,继续尝试...');
     }
 
-    // 初始化页面用完即销毁
-    await initPage.close();
-
-    return context;
+    return { context, page };
   }
 
   /**
@@ -173,12 +183,14 @@ class BrowserService {
     logger.info(`[browser] 创建新会话: ${sessionId.substring(0, 8)}...`);
     const createPromise = (async (): Promise<BrowserSession> => {
       try {
-        const context = await this.createContext(sessionId, webId, userId);
+        const { context, page } = await this.createContext(sessionId, webId, userId);
         const session: BrowserSession = {
           context,
+          page,
           lastUsed: Date.now(),
           idleTimer: setTimeout(() => this.closeSession(sessionId), SESSION_IDLE_TIMEOUT),
           ready: Promise.resolve(),
+          fetchLock: Promise.resolve(),
         };
         this.sessions.set(sessionId, session);
         logger.info(`[browser] 会话已创建 (session: ${sessionId.substring(0, 8)}...)`);
@@ -194,7 +206,8 @@ class BrowserService {
 
   /**
    * 在浏览器中执行 HTTP 请求
-   * 每次调用创建独立 Page，执行完后销毁，支持同 sessionId 并发
+   * 在持久化页面的 JS 上下文中执行 fetch，bdms SDK 自动注入风控 token
+   * 同一 session 的并发请求通过 fetchLock 串行化
    */
   async fetch(
     sessionId: string,
@@ -215,14 +228,17 @@ class BrowserService {
       logger.info(`[browser] 请求体: ${body.substring(0, 1000)}...`);
     }
 
-    // 每次请求独立 page，执行完即销毁，支持并发
-    // 必须先导航到目标域名，否则 about:blank 页面无法发出跨域 fetch
-    const page = await session.context.newPage();
-    try {
-      const targetOrigin = new URL(url).origin;
-      await page.goto(targetOrigin, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    // 串行化：等待上一个 fetch 完成，再执行本次
+    let releaseLock!: () => void;
+    const prevLock = session.fetchLock;
+    session.fetchLock = new Promise<void>((resolve) => { releaseLock = resolve; });
 
-      const result = await page.evaluate(
+    try {
+      await prevLock;
+
+      // 在持久化页面的 JS 上下文中执行 fetch
+      // bdms/acrawler SDK 已在页面中运行，会自动注入风控 headers/token
+      const result = await session.page.evaluate(
         async ({ url, method, headers, body }) => {
           const resp = await fetch(url, {
             method,
@@ -234,9 +250,10 @@ class BrowserService {
         },
         { url, method, headers, body }
       );
+
       return result;
     } finally {
-      await page.close().catch(() => {});
+      releaseLock();
     }
   }
 
@@ -248,6 +265,12 @@ class BrowserService {
     if (!session) return;
 
     clearTimeout(session.idleTimer);
+
+    try {
+      await session.page.close();
+    } catch {
+      // ignore
+    }
 
     try {
       await session.context.close();

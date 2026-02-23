@@ -276,13 +276,16 @@ class Server {
 
             try {
                 // 关闭浏览器服务
+                logger.info('开始关闭浏览器服务...');
                 await browserService.close();
                 logger.info('浏览器服务已关闭');
             } catch (error: any) {
                 logger.error(`关闭浏览器服务失败: ${error.message}`);
+                logger.error(error.stack);
             }
 
             logger.info('服务已优雅关闭');
+            logger.info(`准备退出进程 (exit code: ${signal === 'SIGTERM' ? 2 : 0})`);
             process.exit(signal === 'SIGTERM' ? 2 : 0);
         };
 
@@ -290,8 +293,23 @@ class Server {
         process.removeAllListeners('SIGTERM');
         process.removeAllListeners('SIGINT');
 
-        process.on('SIGTERM', () => shutdown('SIGTERM'));
-        process.on('SIGINT', () => shutdown('SIGINT'));
+        // 使用异步处理器
+        process.on('SIGTERM', async () => {
+            try {
+                await shutdown('SIGTERM');
+            } catch (err) {
+                logger.error('优雅关闭失败:', err);
+                process.exit(2);
+            }
+        });
+        process.on('SIGINT', async () => {
+            try {
+                await shutdown('SIGINT');
+            } catch (err) {
+                logger.error('优雅关闭失败:', err);
+                process.exit(1);
+            }
+        });
     }
 
 }

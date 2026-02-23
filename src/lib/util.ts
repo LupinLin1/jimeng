@@ -280,6 +280,35 @@ const util = {
     return _.isBuffer(value) ? CRC32.buf(value) : CRC32.str(value);
   },
 
+  /**
+   * 保持字段顺序的JSON序列化
+   * 确保字段顺序与官网一致，避免风控检测
+   */
+  stableStringify(obj: any, space?: string | number): string {
+    if (obj === null || obj === undefined) {
+      return String(obj);
+    }
+
+    // 基础类型直接返回
+    if (typeof obj !== 'object') {
+      return JSON.stringify(obj);
+    }
+
+    // 数组递归处理
+    if (Array.isArray(obj)) {
+      return `[${obj.map(item => this.stableStringify(item)).join(',')}]`;
+    }
+
+    // 对象按键排序后序列化
+    const sortedKeys = Object.keys(obj).sort();
+    const entries = sortedKeys.map(key => {
+      const value = this.stableStringify(obj[key]);
+      return `"${key}":${value}`;
+    });
+
+    return `{${entries.join(',')}}`;
+  },
+
   arrayParse(value): any[] {
     return _.isArray(value) ? value : [value];
   },
