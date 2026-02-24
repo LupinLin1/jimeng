@@ -116,8 +116,8 @@ export function resolveResolution(
  * - 多图模式: 不加
  */
 export function getBenefitCount(
-  userModel: string,
-  regionInfo: RegionInfo,
+  _userModel: string,
+  _regionInfo: RegionInfo,
   isMultiImage: boolean = false
 ): number | undefined {
   if (isMultiImage) return undefined;
@@ -132,7 +132,7 @@ export interface BuildCoreParamOptions {
   model: string;      // 映射后的内部模型名
   prompt: string;
   imageCount?: number;  // 图生图时的图片数量，用于生成动态 ## 前缀
-  negativePrompt?: string;
+  negativePrompt?: string;  // 未提供时发送空字符串 ""（官方请求始终携带此字段）
   seed?: number;
   sampleStrength: number;
   resolution: ResolutionResult;
@@ -172,26 +172,23 @@ export function buildCoreParam(options: BuildCoreParamOptions) {
     id: util.uuid(),
     model,
     prompt: `${promptPrefix}${prompt}`,
+    negative_prompt: negativePrompt ?? "",
     sample_strength: sampleStrength,
     large_image_info: {
       type: "",
       id: util.uuid(),
-      min_version: DRAFT_MIN_VERSION,
       height: resolution.height,
       width: resolution.width,
       resolution_type: resolution.resolutionType,
     },
     intelligent_ratio: effectiveIntelligentRatio,
+    generate_type: 0,  // core_param 内固定为 0（与 draft component 层的 generate_type 字符串字段无关）
   };
 
   if (mode === "img2img") {
     coreParam.image_ratio = resolution.imageRatio;
   } else if (!effectiveIntelligentRatio) {
     coreParam.image_ratio = resolution.imageRatio;
-  }
-
-  if (negativePrompt !== undefined) {
-    coreParam.negative_prompt = negativePrompt;
   }
 
   if (seed !== undefined) {
