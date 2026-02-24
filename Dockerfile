@@ -45,8 +45,8 @@ RUN npm install -g playwright@1.48.0 && \
     npx playwright install --with-deps chromium
 
 # 创建非root用户
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S jimeng -u 1001
+RUN groupadd -g 1001 nodejs && \
+    useradd -r -u 1001 -g nodejs jimeng
 
 # 设置工作目录
 WORKDIR /app
