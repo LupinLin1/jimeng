@@ -53,7 +53,7 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 RUN npm install -g playwright@1.48.0 && \
     npx playwright install --with-deps chromium && \
     mkdir -p /opt/playwright && \
-    cp -r /root/.cache/ms-playwright/* /opt/playwright/ && \
+    if [ -d "/root/.cache/ms-playwright" ]; then cp -r /root/.cache/ms-playwright/* /opt/playwright/; fi && \
     chmod -R 755 /opt/playwright
 
 # 复制 package.json（使用构建阶段已更新版本）与 package-lock.json
