@@ -30,10 +30,9 @@ RUN npm run build
 # 生产阶段
 FROM node:18-alpine AS production
 
-# 安装健康检查工具和 Playwright 浏览器依赖
+# 安装健康检查工具和 Playwright 依赖
 RUN apk add --no-cache \
     wget \
-    chromium \
     nss \
     freetype \
     harfbuzz \
@@ -42,12 +41,7 @@ RUN apk add --no-cache \
 
 # 安装 Playwright 及浏览器
 RUN npm install -g playwright@1.48.0 && \
-    npx playwright install-deps chromium && \
-    npx playwright install chromium
-
-# 设置环境变量指向系统 Chromium
-ENV PLAYWRIGHT_BROWSERS_PATH=/usr/bin/chromium-browser
-ENV CHROMIUM_PATH=/usr/bin/chromium-browser
+    npx playwright install --with-deps chromium
 
 # 创建非root用户
 RUN addgroup -g 1001 -S nodejs && \
