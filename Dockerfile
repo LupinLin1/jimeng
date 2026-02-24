@@ -1,11 +1,11 @@
 # 构建阶段
-FROM node:18-alpine AS builder
+FROM node:18-bookworm-slim AS builder
 
 # 设置工作目录
 WORKDIR /app
 
 # 安装构建依赖（包括Python和make，某些npm包需要）
-RUN apk add --no-cache python3 make g++
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 # 复制package文件以优化Docker层缓存
 COPY package.json package-lock.json ./
@@ -28,16 +28,17 @@ RUN if [ -n "$VERSION" ]; then \
 RUN npm run build
 
 # 生产阶段
-FROM node:18-alpine AS production
+FROM node:18-bookworm-slim AS production
 
 # 安装健康检查工具和 Playwright 依赖
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y \
     wget \
-    nss \
-    freetype \
-    harfbuzz \
+    gnupg \
     ca-certificates \
-    ttf-freefont
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    fonts-wqy-zenhei \
+    && rm -rf /var/lib/apt/lists/*
 
 # 安装 Playwright 及浏览器
 RUN npm install -g playwright@1.48.0 && \
