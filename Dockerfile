@@ -40,16 +40,21 @@ RUN apt-get update && apt-get install -y \
     fonts-wqy-zenhei \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装 Playwright 及浏览器
-RUN npm install -g playwright@1.48.0 && \
-    npx playwright install --with-deps chromium
-
 # 创建非root用户
 RUN groupadd -g 1001 nodejs && \
     useradd -r -u 1001 -g nodejs jimeng
 
 # 设置工作目录
 WORKDIR /app
+
+# 安装 Playwright 及浏览器
+# 设置 PLAYWRIGHT_BROWSERS_PATH 为全局可访问位置
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+RUN npm install -g playwright@1.48.0 && \
+    npx playwright install --with-deps chromium && \
+    mkdir -p /opt/playwright && \
+    cp -r /root/.cache/ms-playwright/* /opt/playwright/ && \
+    chmod -R 755 /opt/playwright
 
 # 复制 package.json（使用构建阶段已更新版本）与 package-lock.json
 COPY --from=builder /app/package.json ./package.json
