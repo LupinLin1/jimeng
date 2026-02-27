@@ -43,6 +43,10 @@ class BrowserService {
   private available: boolean = false;
   /** 全局创建锁：防止 getSession 并发时对同一 sessionId 重复初始化 */
   private creatingSession: Map<string, Promise<BrowserSession>> = new Map();
+  private newPageFailureCount: number = 0;  // 记录连续失败次数
+  private readonly MAX_FAILURES_BEFORE_RESET = 3;  // 失败次数阈值
+  /** 全局重置锁：防止多个请求同时重置浏览器 */
+  private resetPromise: Promise<void> | null = null;
 
   /**
    * 初始化浏览器服务
@@ -66,8 +70,21 @@ class BrowserService {
 
   /**
    * 确保浏览器已启动
+   * 如果正在重置中，等待重置完成
    */
   private async ensureBrowser(): Promise<Browser> {
+    // 如果正在重置，等待重置完成
+    if (this.resetPromise) {
+      logger.debug('[browser] 浏览器正在重置中，等待完成...');
+      await this.resetPromise;
+    }
+
+    // 检查浏览器连接状态，若已断开（进程崩溃）则触发重置
+    if (this.browser && !this.browser.isConnected()) {
+      logger.warn('[browser] 检测到浏览器进程已断开，触发重置...');
+      await this.resetBrowser();
+    }
+
     if (this.browser) return this.browser;
 
     if (!this.available) {
@@ -126,7 +143,45 @@ class BrowserService {
 
     // 导航到即梦首页，等待 bdms SDK 加载完成
     // 此页面持久化保留，后续 fetch 请求都在此页面执行（bdms SDK 自动注入风控 token）
-    const page = await context.newPage();
+    let page: Page;
+    try {
+      // 添加超时配置，防止 newPage() 无限期挂起
+      page = await Promise.race([
+        context.newPage(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('创建页面超时 (10秒)')), 10000)
+        ),
+      ]);
+      logger.info(`[browser] 页面创建成功 (session: ${sessionId.substring(0, 8)}...)`);
+      // 页面创建成功，重置失败计数
+      this.newPageFailureCount = 0;
+    } catch (error: any) {
+      logger.error(`[browser] 创建页面失败: ${error.message}`);
+
+      // 增加失败计数
+      this.newPageFailureCount++;
+      logger.warn(`[browser] newPage 失败计数: ${this.newPageFailureCount}/${this.MAX_FAILURES_BEFORE_RESET}`);
+
+      // 如果是浏览器/上下文已关闭错误（竞态条件），立即重置浏览器实例
+      const isBrowserClosed = error.message?.includes('Target page, context or browser has been closed');
+      if (isBrowserClosed || this.newPageFailureCount >= this.MAX_FAILURES_BEFORE_RESET) {
+        if (isBrowserClosed) {
+          logger.error('[browser] 检测到浏览器上下文已关闭（竞态条件），立即重置浏览器实例');
+        } else {
+          logger.error(`[browser] 连续失败 ${this.newPageFailureCount} 次，重置浏览器实例`);
+        }
+        await this.resetBrowser();
+      }
+
+      // 清理 context 并抛出错误，让上层重试
+      try {
+        await context.close();
+      } catch (closeError) {
+        logger.warn(`[browser] 关闭 context 失败: ${closeError.message}`);
+      }
+      throw new Error(`浏览器页面创建失败: ${error.message}`);
+    }
+
     logger.info(`[browser] 正在导航到 jimeng.jianying.com (session: ${sessionId.substring(0, 8)}...)`);
     try {
       // 使用 domcontentloaded 等待页面 JS 执行（bdms SDK 需要 JS 运行才能注入 fetch 拦截）
@@ -195,6 +250,10 @@ class BrowserService {
         this.sessions.set(sessionId, session);
         logger.info(`[browser] 会话已创建 (session: ${sessionId.substring(0, 8)}...)`);
         return session;
+      } catch (error: any) {
+        logger.error(`[browser] 创建会话失败 (session: ${sessionId.substring(0, 8)}...): ${error.message}`);
+        // 确保失败时从 creatingSession 中移除，允许重试
+        throw error;
       } finally {
         this.creatingSession.delete(sessionId);
       }
@@ -280,6 +339,63 @@ class BrowserService {
 
     this.sessions.delete(sessionId);
     logger.info(`[browser] 会话已关闭 (session: ${sessionId.substring(0, 8)}...)`);
+  }
+
+  /**
+   * 重置浏览器实例（用于恢复异常状态）
+   * 使用重置锁防止并发重置
+   */
+  private async resetBrowser(): Promise<void> {
+    // 如果已经在重置中，等待完成
+    if (this.resetPromise) {
+      logger.warn('[browser] 浏览器正在重置中，等待现有重置完成...');
+      return this.resetPromise;
+    }
+
+    // 创建新的重置任务
+    this.resetPromise = (async () => {
+      logger.warn('[browser] 开始重置浏览器实例...');
+
+      try {
+        // 关闭所有会话
+        const sessionIds = Array.from(this.sessions.keys());
+        for (const sessionId of sessionIds) {
+          await this.closeSession(sessionId);
+        }
+
+        // 关闭浏览器实例
+        if (this.browser) {
+          try {
+            await this.browser.close();
+            logger.info('[browser] 旧浏览器实例已关闭');
+          } catch (error: any) {
+            logger.warn(`[browser] 关闭旧浏览器实例失败: ${error.message}`);
+          }
+          this.browser = null;
+        }
+
+        // 等待一下让资源释放
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // 重新初始化浏览器
+        try {
+          await this.initialize();
+          logger.info('[browser] 浏览器实例已重置');
+        } catch (error: any) {
+          logger.error(`[browser] 重置浏览器失败: ${error.message}`);
+          this.available = false;
+          throw error;
+        }
+
+        // 重置失败计数
+        this.newPageFailureCount = 0;
+      } finally {
+        // 清除重置锁
+        this.resetPromise = null;
+      }
+    })();
+
+    return this.resetPromise;
   }
 
   /**

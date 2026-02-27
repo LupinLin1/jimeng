@@ -30,7 +30,6 @@ export const BROWSER_LAUNCH_ARGS = [
   '--disable-gpu',
   '--no-first-run',
   '--no-zygote',
-  '--single-process',
 ];
 
 // bdms SDK 加载检测超时配置
