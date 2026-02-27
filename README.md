@@ -555,6 +555,99 @@ curl -X POST http://localhost:5100/v1/videos/generations \
 
 ```
 
+### Video Generation Async API
+
+The video generation API now supports asynchronous mode by default. After submitting a task, you receive a `task_id` to poll for status.
+
+#### Submit Video Generation Task
+
+Same as the synchronous API above, but now returns immediately with a task ID:
+
+```json
+{
+  "created": 1709123456,
+  "task_id": "1897234567890123456",
+  "status": "pending"
+}
+```
+
+#### Query Task Status
+
+**GET** `/v1/videos/tasks/:taskId`
+
+Returns the current status of a video generation task.
+
+```bash
+curl http://localhost:5100/v1/videos/tasks/YOUR_TASK_ID \
+  -H "Authorization: Bearer YOUR_SESSION_ID"
+```
+
+**Response Examples**:
+
+Pending/Processing:
+```json
+{
+  "task_id": "1897234567890123456",
+  "status": "processing",
+  "progress": 45
+}
+```
+
+Completed:
+```json
+{
+  "task_id": "1897234567890123456",
+  "status": "completed",
+  "progress": 100,
+  "result": {
+    "url": "https://...",
+    "b64_url": "/v1/videos/tasks/1897234567890123456/b64"
+  }
+}
+```
+
+Failed:
+```json
+{
+  "task_id": "1897234567890123456",
+  "status": "failed",
+  "error": "生成失败，请重试",
+  "error_code": "3001"
+}
+```
+
+**Status Values**:
+- `pending` - Task submitted, waiting to start
+- `processing` - Video generation in progress
+- `completed` - Generation complete, video URL available
+- `failed` - Generation failed, check `error` and `error_code`
+- `not_found` - Task ID invalid or expired
+
+#### Download Video as Base64
+
+**GET** `/v1/videos/tasks/:taskId/b64`
+
+Downloads the completed video and returns it as base64-encoded data.
+
+```bash
+curl http://localhost:5100/v1/videos/tasks/YOUR_TASK_ID/b64 \
+  -H "Authorization: Bearer YOUR_SESSION_ID"
+```
+
+**Response**:
+```json
+{
+  "task_id": "1897234567890123456",
+  "b64_json": "AAAAIGZ0eXBpc29t...",
+  "content_type": "video/mp4"
+}
+```
+
+**Error Responses**:
+- `401` - Missing or invalid authorization
+- `404` - Task not found or expired
+- `400` - Task not yet completed (poll status first)
+
 ### Token API
 
 #### Token Bound Proxy Feature (New)

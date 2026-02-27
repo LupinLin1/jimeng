@@ -582,6 +582,99 @@ curl -X POST http://localhost:5100/v1/videos/generations \
 
 ```
 
+### 视频生成异步 API
+
+视频生成 API 现在默认支持异步模式。提交任务后会立即返回 `task_id`，可用于轮询查询状态。
+
+#### 提交视频生成任务
+
+与上述同步 API 相同，但现在立即返回任务 ID：
+
+```json
+{
+  "created": 1709123456,
+  "task_id": "1897234567890123456",
+  "status": "pending"
+}
+```
+
+#### 查询任务状态
+
+**GET** `/v1/videos/tasks/:taskId`
+
+返回视频生成任务的当前状态。
+
+```bash
+curl http://localhost:5100/v1/videos/tasks/你的任务ID \
+  -H "Authorization: Bearer YOUR_SESSION_ID"
+```
+
+**响应示例**：
+
+等待中/处理中：
+```json
+{
+  "task_id": "1897234567890123456",
+  "status": "processing",
+  "progress": 45
+}
+```
+
+已完成：
+```json
+{
+  "task_id": "1897234567890123456",
+  "status": "completed",
+  "progress": 100,
+  "result": {
+    "url": "https://...",
+    "b64_url": "/v1/videos/tasks/1897234567890123456/b64"
+  }
+}
+```
+
+失败：
+```json
+{
+  "task_id": "1897234567890123456",
+  "status": "failed",
+  "error": "生成失败，请重试",
+  "error_code": "3001"
+}
+```
+
+**状态值说明**：
+- `pending` - 任务已提交，等待开始
+- `processing` - 视频生成中
+- `completed` - 生成完成，视频 URL 可用
+- `failed` - 生成失败，查看 `error` 和 `error_code`
+- `not_found` - 任务 ID 无效或已过期
+
+#### Base64 下载视频
+
+**GET** `/v1/videos/tasks/:taskId/b64`
+
+下载已完成的视频并以 base64 编码格式返回。
+
+```bash
+curl http://localhost:5100/v1/videos/tasks/你的任务ID/b64 \
+  -H "Authorization: Bearer YOUR_SESSION_ID"
+```
+
+**响应**：
+```json
+{
+  "task_id": "1897234567890123456",
+  "b64_json": "AAAAIGZ0eXBpc29t...",
+  "content_type": "video/mp4"
+}
+```
+
+**错误响应**：
+- `401` - 缺少或无效的认证
+- `404` - 任务不存在或已过期
+- `400` - 任务尚未完成（请先轮询状态）
+
 ### Token API
 
 #### Token 绑定代理功能 (新)
