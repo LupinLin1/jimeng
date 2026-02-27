@@ -18,6 +18,15 @@ import { uploadVideoFromUrl } from "@/lib/video-uploader.ts";
 
 export const DEFAULT_MODEL = DEFAULT_VIDEO_MODEL;
 
+// 定义异步模式的返回类型
+export interface VideoGenerationAsyncResult {
+  task_id: string;
+  status: 'pending';
+}
+
+// 定义联合返回类型
+export type VideoGenerationResult = string | VideoGenerationAsyncResult;
+
 export function getModel(model: string, regionInfo: RegionInfo) {
   // 根据站点选择不同的模型映射
   let modelMap: Record<string, string>;
@@ -165,6 +174,7 @@ export async function generateVideo(
     files = {},
     httpRequest,
     functionMode = "first_last_frames",
+    waitCompletion = false,
   }: {
     ratio?: string;
     resolution?: string;
@@ -173,9 +183,10 @@ export async function generateVideo(
     files?: any;
     httpRequest?: any;
     functionMode?: string;
+    waitCompletion?: boolean;
   },
   refreshToken: string
-) {
+): Promise<VideoGenerationResult> {
   // 检测区域
   const regionInfo = parseRegionFromToken(refreshToken);
   const { isInternational } = regionInfo;
@@ -898,7 +909,18 @@ export async function generateVideo(
   if (!historyId)
     throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "记录ID不存在");
 
-  logger.info(`视频生成任务已提交，history_id: ${historyId}，等待生成完成...`);
+  // ========== 异步模式支持 ==========
+  // 如果不需要等待完成,立即返回 task_id
+  if (!waitCompletion) {
+    logger.info(`视频生成任务已提交(异步模式), history_id: ${historyId}`);
+    return {
+      task_id: historyId,
+      status: 'pending'
+    } as VideoGenerationAsyncResult;
+  }
+
+  logger.info(`视频生成任务已提交(同步模式), history_id: ${historyId}, 等待生成完成...`);
+  // ========== 异步模式支持结束 ==========
 
   // 首次查询前等待，让服务器有时间处理请求
   await new Promise((resolve) => setTimeout(resolve, 5000));
@@ -1002,4 +1024,209 @@ export async function generateVideo(
 
   logger.info(`视频生成成功，URL: ${fallbackVideoUrl}，总耗时: ${pollingResult.elapsedTime}秒`);
   return fallbackVideoUrl;
+}
+
+/**
+ * 映射即梦状态码到API状态
+ */
+function mapStatusToApi(status: number): 'pending' | 'processing' | 'completed' | 'failed' {
+  switch (status) {
+    case 20:  // PROCESSING
+    case 42:  // POST_PROCESSING
+    case 45:  // FINALIZING
+      return 'processing';
+    case 30:  // FAILED
+      return 'failed';
+    case 10:  // SUCCESS
+    case 50:  // COMPLETED
+      return 'completed';
+    default:
+      return 'processing';
+  }
+}
+
+/**
+ * 计算任务进度百分比
+ */
+function calculateProgress(status: number, itemList: any[]): number {
+  // 已完成状态且有结果 - 返回100%
+  if ((status === 10 || status === 50) && itemList.length > 0) {
+    return 100;
+  }
+
+  // 已有结果但未标记完成,快完成了
+  if (itemList.length > 0) {
+    return 90;
+  }
+
+  // 根据状态码估算进度
+  switch (status) {
+    case 20: return 50;  // 处理中
+    case 42: return 80;  // 后处理
+    case 45: return 90;  // 最终处理
+    default: return 30;  // 未知状态
+  }
+}
+
+/**
+ * 获取错误信息
+ */
+function getErrorMessage(failCode?: string): string {
+  if (!failCode) return '生成失败';
+
+  const errorMap: Record<string, string> = {
+    '5000': '积分不足',
+    '2003': '内容违规',
+  };
+
+  return errorMap[failCode] || `生成失败 (错误码: ${failCode})`;
+}
+
+/**
+ * 查询视频生成任务状态
+ *
+ * @param taskId 任务ID (即梦的 history_record_id)
+ * @param refreshToken 刷新令牌
+ * @returns 任务状态信息
+ */
+export async function getVideoTaskStatus(
+  taskId: string,
+  refreshToken: string
+): Promise<{
+  task_id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'not_found';
+  progress?: number;
+  result?: { url: string; b64_url: string };
+  error?: string;
+  error_code?: string;
+}> {
+  try {
+    // 调用即梦 API 查询状态
+    const result = await request("post", "/mweb/v1/get_history_by_ids", refreshToken, {
+      data: {
+        history_ids: [taskId],
+      },
+    });
+
+    const historyData = result[taskId];
+
+    // 任务不存在
+    if (!historyData) {
+      logger.warn(`任务不存在: ${taskId}`);
+      return {
+        task_id: taskId,
+        status: 'not_found'
+      };
+    }
+
+    const status = historyData.status;
+    const failCode = historyData.fail_code;
+    const itemList = historyData.item_list || [];
+
+    logger.info(`任务状态查询: ${taskId}, 即梦状态: ${status}, 失败码: ${failCode || 'none'}, 结果数: ${itemList.length}`);
+
+    // 失败状态
+    if (status === 30) {
+      return {
+        task_id: taskId,
+        status: 'failed',
+        error: getErrorMessage(failCode),
+        error_code: failCode
+      };
+    }
+
+    // 成功状态
+    if (status === 10 || status === 50) {
+      // 提取视频URL
+      let videoUrl: string | null = null;
+
+      if (itemList.length > 0) {
+        const item = itemList[0];
+
+        // 尝试多种URL字段
+        videoUrl = item.video?.transcoded_video?.origin?.video_url ||
+                   item.video?.play_url ||
+                   item.video?.download_url ||
+                   item.video?.url;
+      }
+
+      if (videoUrl) {
+        return {
+          task_id: taskId,
+          status: 'completed',
+          progress: 100,
+          result: {
+            url: videoUrl,
+            b64_url: `/v1/videos/tasks/${taskId}/b64`,
+          }
+        };
+      } else {
+        // 状态已完成但无URL,可能是最终处理中
+        return {
+          task_id: taskId,
+          status: 'processing',
+          progress: 95,
+          error: '视频生成完成,正在提取URL'
+        };
+      }
+    }
+
+    // 处理中
+    const progress = calculateProgress(status, itemList);
+    return {
+      task_id: taskId,
+      status: 'processing',
+      progress
+    };
+
+  } catch (error: any) {
+    logger.error(`查询任务状态失败: ${taskId}, 错误: ${error.message}`);
+
+    // 网络错误时不认为是任务不存在,返回处理中状态
+    return {
+      task_id: taskId,
+      status: 'processing',
+      progress: 0,
+      error: `查询失败: ${error.message}`
+    };
+  }
+}
+
+/**
+ * 下载已完成的视频并返回 base64 编码
+ *
+ * @param taskId 任务ID (即梦的 history_record_id)
+ * @param refreshToken 刷新令牌
+ * @returns base64 编码的视频数据
+ */
+export async function downloadVideoAsBase64(
+  taskId: string,
+  refreshToken: string
+): Promise<{ task_id: string; b64_json: string; content_type: string }> {
+  const status = await getVideoTaskStatus(taskId, refreshToken);
+
+  if (status.status === 'not_found') {
+    throw new APIException(EX.API_NOT_FOUND, '任务不存在或已过期');
+  }
+
+  if (status.status !== 'completed') {
+    throw new APIException(
+      EX.API_REQUEST_FAILED,
+      `任务尚未完成，当前状态: ${status.status}`
+    );
+  }
+
+  if (!status.result?.url) {
+    throw new APIException(EX.API_REQUEST_FAILED, '任务已完成但视频URL不可用');
+  }
+
+  logger.info(`[video-b64] 开始下载视频: ${status.result.url.substring(0, 80)}...`);
+  const b64 = await util.fetchFileBASE64(status.result.url);
+  logger.info(`[video-b64] 视频下载并编码完成，taskId: ${taskId}`);
+
+  return {
+    task_id: taskId,
+    b64_json: b64,
+    content_type: 'video/mp4',
+  };
 }

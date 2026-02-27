@@ -3,8 +3,10 @@ import _ from 'lodash';
 import Request from '@/lib/request/Request.ts';
 import Response from '@/lib/response/Response.ts';
 import { tokenSplit } from '@/api/controllers/core.ts';
-import { generateVideo, DEFAULT_MODEL } from '@/api/controllers/videos.ts';
+import { generateVideo, getVideoTaskStatus, downloadVideoAsBase64, DEFAULT_MODEL, VideoGenerationAsyncResult } from '@/api/controllers/videos.ts';
 import util from '@/lib/util.ts';
+import EX from '@/api/consts/exceptions.ts';
+import APIException from '@/lib/exceptions/APIException.ts';
 
 export default {
 
@@ -22,7 +24,7 @@ export default {
                 .validate('body.ratio', v => _.isUndefined(v) || _.isString(v))
                 .validate('body.resolution', v => _.isUndefined(v) || _.isString(v))
                 .validate('body.functionMode', v => _.isUndefined(v) || (_.isString(v) && ['first_last_frames', 'omni_reference'].includes(v)))
-                .validate('body.response_format', v => _.isUndefined(v) || _.isString(v))
+                // 移除 response_format 验证
                 .validate('headers.authorization', _.isString);
 
             const functionMode = request.body.functionMode || 'first_last_frames';
@@ -149,7 +151,6 @@ export default {
                 duration = 5,
                 file_paths = [],
                 filePaths = [],
-                response_format = "url"
             } = request.body;
 
             // 如果是 multipart/form-data，需要将字符串转换为数字
@@ -161,7 +162,7 @@ export default {
             const finalFilePaths = filePaths.length > 0 ? filePaths : file_paths;
 
             // 生成视频
-            const generatedVideoUrl = await generateVideo(
+            const generationResult = await generateVideo(
                 model,
                 prompt,
                 {
@@ -172,33 +173,63 @@ export default {
                     files: request.files, // 传递上传的文件
                     httpRequest: request, // 传递完整的 request 对象以访问动态字段
                     functionMode,
+                    waitCompletion: false,  // 异步模式：不等待完成
                 },
                 token
-            );
+            ) as VideoGenerationAsyncResult;
 
-            // 根据response_format返回不同格式的结果
-            if (response_format === "b64_json") {
-                // 获取视频内容并转换为BASE64
-                const videoBase64 = await util.fetchFileBASE64(generatedVideoUrl);
-                return {
-                    created: util.unixTimestamp(),
-                    data: [{
-                        b64_json: videoBase64,
-                        revised_prompt: prompt
-                    }]
-                };
-            } else {
-                // 默认返回URL
-                return {
-                    created: util.unixTimestamp(),
-                    data: [{
-                        url: generatedVideoUrl,
-                        revised_prompt: prompt
-                    }]
-                };
-            }
+            // 返回任务ID
+            return {
+                created: util.unixTimestamp(),
+                task_id: generationResult.task_id,
+                status: generationResult.status
+            };
         }
 
+    },
+
+    get: {
+        '/tasks/:taskId': async (request: Request) => {
+            // 验证 task_id 参数
+            request.validate('params.taskId', _.isString)
+                .validate('headers.authorization', _.isString);
+
+            const { taskId } = request.params;
+
+            // refresh_token切分
+            const tokens = tokenSplit(request.headers.authorization);
+            const token = _.sample(tokens);
+
+            if (!token) {
+                throw new APIException(EX.API_UNAUTHORIZED, '未提供认证令牌');
+            }
+
+            // 查询任务状态
+            const status = await getVideoTaskStatus(taskId, token);
+
+            // 任务不存在
+            if (status.status === 'not_found') {
+                throw new APIException(EX.API_NOT_FOUND, '任务不存在或已过期');
+            }
+
+            return status;
+        },
+
+        '/tasks/:taskId/b64': async (request: Request) => {
+            request.validate('params.taskId', _.isString)
+                .validate('headers.authorization', _.isString);
+
+            const { taskId } = request.params;
+
+            const tokens = tokenSplit(request.headers.authorization);
+            const token = _.sample(tokens);
+
+            if (!token) {
+                throw new APIException(EX.API_UNAUTHORIZED, '未提供认证令牌');
+            }
+
+            return await downloadVideoAsBase64(taskId, token);
+        }
     }
 
 }
