@@ -2,7 +2,7 @@
 
 [中文文档](README.CN.md)
 
-🎨 **Free AI Image and Video Generation API Service** - Based on reverse engineering of Jimeng AI (China site) and Dreamina (international site).
+🎨 **Free AI Image and Video Generation API Service** - Based on reverse engineering of Jimeng AI (China site) and Dreamina (international site), with enhanced reliability and availability for Seedance-related workflows.
 
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/) [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/) [![Docker](https://img.shields.io/badge/Docker-Supported-blue.svg)](https://www.docker.com/) [![License](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE) [![Telegram](https://img.shields.io/badge/Telegram-Group-blue.svg?logo=telegram)](https://t.me/jimeng_api)
 
@@ -23,7 +23,8 @@
 - 📊 **Detailed Logs**: Structured logging for easy debugging.
 - 🐳 **Docker Support**: Containerized deployment, ready to use out of the box.
 - ⚙️ **Log Level Control**: Dynamically adjust log output level through configuration files.
-- 🌐 **浏览器代理**: 为 seedance 模型提供 Playwright 浏览器代理,绕过 shark 反爬机制
+- 🌐 **Seedance Browser Proxy**: Provides a Playwright browser proxy path for the Seedance model to mitigate Shark anti-bot interception.
+- ⏱️ **Asynchronous Invocation**: Supports async task submission and polling-based status retrieval for long-running generation workflows (including Seedance scenarios).
 
 ## ⭐ Star History
 
