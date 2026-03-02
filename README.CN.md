@@ -1,6 +1,6 @@
 # Jimeng API
 
-🎨 **免费的AI图像和视频生成API服务** - 基于即梦AI（国内站）和dreamina（国际站）的逆向工程实现。
+🎨 **免费的AI图像和视频生成API服务** - 基于即梦AI（国内站）和 dreamina（国际站）的逆向工程实现，重点增强了 seedance 模型链路的稳定性与可用性。
 
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/) [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/) [![Docker](https://img.shields.io/badge/Docker-支持-blue.svg)](https://www.docker.com/) [![License](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE) [![Telegram](https://img.shields.io/badge/Telegram-群组-blue.svg?logo=telegram)](https://t.me/jimeng_api)
 
@@ -16,6 +16,8 @@
 - 🖼️ **图生图合成**: 支持本地图片或者图片URL
 - 🎬 **AI视频生成**: 支持文本到视频生成，增加国内站图生视频的本地图片上传功能
 - 🌐 **国际站支持**: 新增对即梦国际站（dreamina）文生图以及图生图API的支持，有问题提issue
+- 🧠 **Seedance专项优化**: 针对 seedance 模型增加 Playwright 浏览器代理链路，降低 shark 反爬拦截导致的失败率
+- ⏱️ **异步调用支持**: 提供任务异步提交与轮询查询能力，适配 seedance 等耗时生成场景，提升并发与稳定性
 - 🔄 **智能轮询**: 自适应轮询机制，优化生成效率
 - 🛡️ **统一异常处理**: 完善的错误处理和重试机制
 - 📊 **详细日志**: 结构化日志记录，便于调试
