@@ -471,6 +471,46 @@ export async function generateVideo(
 
     logger.info(`[omni] 视频总时长: ${totalVideoDuration.toFixed(2)}s`);
 
+    // 串行上传音频素材
+    for (const fieldName of audioFields) {
+      const audioFile = files?.[fieldName];
+      const audioUrlField = httpRequest?.body?.[fieldName];
+
+      try {
+        logger.info(`[omni] 上传 ${fieldName}`);
+        let aResult: AudioUploadResult;
+
+        if (audioFile) {
+          const buf = await fs.readFile(audioFile.filepath);
+          aResult = await uploadAudioBuffer(buf, refreshToken, regionInfo);
+          aResult = { ...aResult, name: audioFile.originalFilename || "" };
+          const entry: MaterialEntry = {
+            idx: materialIdx++,
+            type: "audio",
+            fieldName,
+            originalFilename: audioFile.originalFilename,
+            audioResult: aResult,
+          };
+          materialRegistry.set(fieldName, entry);
+          registerAlias(audioFile.originalFilename, entry);
+          logger.info(`[omni] ${fieldName} 上传成功: vid=${aResult.vid}, duration=${aResult.duration}ms`);
+        } else if (audioUrlField && typeof audioUrlField === 'string' && audioUrlField.startsWith('http')) {
+          aResult = await uploadAudioFromUrl(audioUrlField, refreshToken, regionInfo);
+          const entry: MaterialEntry = {
+            idx: materialIdx++,
+            type: "audio",
+            fieldName,
+            originalFilename: audioUrlField,
+            audioResult: aResult,
+          };
+          materialRegistry.set(fieldName, entry);
+          logger.info(`[omni] ${fieldName} URL上传成功: vid=${aResult.vid}, duration=${aResult.duration}ms`);
+        }
+      } catch (error: any) {
+        throw new APIException(EX.API_REQUEST_FAILED, `${fieldName} 处理失败: ${error.message}`);
+      }
+    }
+
     // 构建 material_list（按注册顺序）
     const orderedEntries = [...new Map([...materialRegistry].filter(([k, v]) => k === v.fieldName)).values()]
       .sort((a, b) => a.idx - b.idx);
