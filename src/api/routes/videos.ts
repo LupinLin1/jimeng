@@ -112,6 +112,20 @@ export default {
                     }
                 }
 
+                // 统计音频文件
+                let audioCount = 0;
+                for (let i = 1; i <= 2; i++) {
+                    const fieldName = `audio_file_${i}`;
+                    if (uploadedFiles[fieldName]) {
+                        audioCount++;
+                    } else if (typeof request.body[fieldName] === 'string' && request.body[fieldName].startsWith('http')) {
+                        audioCount++;
+                    }
+                }
+                if (audioCount > 2) {
+                    throw new Error('全能模式最多上传2个音频文件');
+                }
+
                 // 验证数量限制
                 if (imageCount > 9) {
                     throw new Error('全能模式最多上传9张图片');
@@ -120,14 +134,14 @@ export default {
                     throw new Error('全能模式最多上传3个视频');
                 }
 
-                const totalCount = imageCount + videoCount;
+                const totalCount = imageCount + videoCount + audioCount;
                 if (totalCount > 12) {
                     throw new Error('全能模式图片+视频总数不超过12个');
                 }
                 if (totalCount === 0) {
                     const hasFilePaths = (request.body.filePaths?.length > 0) || (request.body.file_paths?.length > 0);
                     if (!hasFilePaths) {
-                        throw new Error('全能模式至少需要上传1个素材文件(图片或视频)');
+                        throw new Error('全能模式至少需要上传1个素材文件(图片、视频或音频)');
                     }
                 }
             } else {
