@@ -122,6 +122,7 @@ export default {
                         audioCount++;
                     }
                 }
+                // 防御性检查：当前只检测 audio_file_1/2，audioCount 理论上不超过 2
                 if (audioCount > 2) {
                     throw new Error('全能模式最多上传2个音频文件');
                 }
@@ -136,7 +137,7 @@ export default {
 
                 const totalCount = imageCount + videoCount + audioCount;
                 if (totalCount > 12) {
-                    throw new Error('全能模式图片+视频总数不超过12个');
+                    throw new Error('全能模式图片+视频+音频总数不超过12个');
                 }
                 if (totalCount === 0) {
                     const hasFilePaths = (request.body.filePaths?.length > 0) || (request.body.file_paths?.length > 0);
