@@ -538,7 +538,7 @@ export async function generateVideo(
           },
         });
         materialTypes.push(1);
-      } else {
+      } else if (entry.type === "video") {
         const vm = entry.videoResult!;
         material_list.push({
           type: "",
@@ -557,6 +557,22 @@ export async function generateVideo(
           },
         });
         materialTypes.push(2);
+      } else {
+        const am = entry.audioResult!;
+        material_list.push({
+          type: "",
+          id: util.uuid(),
+          material_type: "audio",
+          audio_info: {
+            type: "audio",
+            id: util.uuid(),
+            source_from: "upload",
+            vid: am.vid,
+            duration: am.duration,
+            name: am.name || entry.originalFilename || "",
+          },
+        });
+        materialTypes.push(3);
       }
     }
 
@@ -593,8 +609,10 @@ export async function generateVideo(
       sceneOptions: JSON.stringify([sceneOption]),
     });
 
-    // 根据模型选择 benefit_type
-    const omniBenefitType = is40 ? OMNI_BENEFIT_TYPE_FAST : OMNI_BENEFIT_TYPE;
+    // 根据模型和素材类型选择 benefit_type
+    const omniBenefitTypeBase = is40 ? OMNI_BENEFIT_TYPE_FAST : OMNI_BENEFIT_TYPE;
+    const hasVideoMaterial = orderedEntries.some(e => e.type === "video");
+    const omniBenefitType = hasVideoMaterial ? `${omniBenefitTypeBase}_with_video` : omniBenefitTypeBase;
 
     requestData = {
       extend: {
