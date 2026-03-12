@@ -275,11 +275,12 @@ export async function generateVideo(
     // 素材注册表: fieldName → { idx, type, uploadResult }
     interface MaterialEntry {
       idx: number;
-      type: "image" | "video";
+      type: "image" | "video" | "audio";
       fieldName: string;
       originalFilename: string;
       imageUri?: string;
       videoResult?: VideoUploadResult;
+      audioResult?: AudioUploadResult;
     }
     const materialRegistry: Map<string, MaterialEntry> = new Map();
     let materialIdx = 0;
@@ -288,6 +289,7 @@ export async function generateVideo(
     const canonicalKeys = new Set<string>();
     for (let i = 1; i <= 9; i++) canonicalKeys.add(`image_file_${i}`);
     for (let i = 1; i <= 3; i++) canonicalKeys.add(`video_file_${i}`);
+    for (let i = 1; i <= 2; i++) canonicalKeys.add(`audio_file_${i}`);  // 音频字段
 
     // 安全注册别名：originalFilename 不与 canonical key 冲突时才注册
     function registerAlias(filename: string, entry: MaterialEntry) {
@@ -299,12 +301,14 @@ export async function generateVideo(
     // 收集所有需要处理的图片和视频字段
     const imageFields: string[] = [];
     const videoFields: string[] = [];
+    const audioFields: string[] = [];
 
     // 检测上传的文件
     if (files) {
       for (const fieldName of Object.keys(files)) {
         if (fieldName.startsWith('image_file_')) imageFields.push(fieldName);
         else if (fieldName.startsWith('video_file_')) videoFields.push(fieldName);
+        else if (fieldName.startsWith('audio_file_')) audioFields.push(fieldName);
       }
     }
 
@@ -321,12 +325,18 @@ export async function generateVideo(
         if (!videoFields.includes(fieldName)) videoFields.push(fieldName);
       }
     }
+    for (let i = 1; i <= 2; i++) {
+      const fieldName = `audio_file_${i}`;
+      if (typeof httpRequest?.body?.[fieldName] === 'string' && httpRequest.body[fieldName].startsWith('http')) {
+        if (!audioFields.includes(fieldName)) audioFields.push(fieldName);
+      }
+    }
 
     // 检查是否有素材
     const hasFilePaths = filePaths && filePaths.length > 0;
-    if (imageFields.length === 0 && videoFields.length === 0 && !hasFilePaths) {
+    if (imageFields.length === 0 && videoFields.length === 0 && audioFields.length === 0 && !hasFilePaths) {
       throw new APIException(EX.API_REQUEST_FAILED,
-        `omni_reference 模式需要至少上传一个素材文件 (image_file_*, video_file_*) 或提供素材URL`);
+        `omni_reference 模式需要至少上传一个素材文件 (image_file_*, video_file_*, audio_file_*) 或提供素材URL`);
     }
 
     let totalVideoDuration = 0; // 累计视频时长
