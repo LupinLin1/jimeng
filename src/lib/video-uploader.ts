@@ -341,7 +341,7 @@ export async function uploadAudioBuffer(
   regionInfo: RegionInfo
 ): Promise<AudioUploadResult> {
   try {
-    const fileSize = (audioBuffer as Buffer).byteLength ?? (audioBuffer as ArrayBuffer).byteLength;
+    const fileSize = audioBuffer.byteLength;
     logger.info(`开始上传音频Buffer... (size=${fileSize})`);
 
     const tokenResult = await request("post", "/mweb/v1/get_upload_token", refreshToken, {
@@ -359,7 +359,7 @@ export async function uploadAudioBuffer(
     const randomStr = Math.random().toString(36).substring(2, 12);
 
     const vodHost = "https://vod.bytedanceapi.com";
-    const applyUrl = `${vodHost}/?Action=ApplyUploadInner&Version=2020-11-19&SpaceName=${spaceName}&FileType=video&IsInner=1&FileSize=${fileSize}&s=${randomStr}`;
+    const applyUrl = `${vodHost}/?Action=ApplyUploadInner&Version=2020-11-19&SpaceName=${spaceName}&FileType=video&IsInner=1&FileSize=${fileSize}&s=${randomStr}`; // 音频与视频共用同一 VOD 上传端点
 
     const awsRegion = RegionUtils.getAWSRegion(regionInfo);
     const origin = RegionUtils.getOrigin(regionInfo);
