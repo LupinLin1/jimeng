@@ -1143,6 +1143,9 @@ function getErrorMessage(failCode?: string): string {
   const errorMap: Record<string, string> = {
     '5000': '积分不足',
     '2003': '内容违规',
+    '2038': '文字不符合规则',
+    '4011': '素材中包含人脸，无法生成',
+    '2043': '视频生成失败',
   };
 
   return errorMap[failCode] || `生成失败 (错误码: ${failCode})`;

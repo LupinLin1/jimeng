@@ -49,6 +49,9 @@ export class JimengErrorHandler {
         throw new APIException(EX.API_IMAGE_GENERATION_INSUFFICIENT_POINTS, 
           `[积分不足]: ${errmsg}。建议：1)尝试使用1024x1024分辨率，2)检查是否需要购买积分，3)确认账户状态正常`);
       
+      case '1019':
+        throw new APIException(EX.API_UNAUTHORIZED, `[账号被封禁]: ${errmsg}`);
+
       case '4001':
         throw new APIException(EX.API_CONTENT_FILTERED, `[内容违规]: ${errmsg}`);
       
@@ -145,7 +148,15 @@ export class JimengErrorHandler {
     // 没有任何结果时，记录错误并抛出异常
     logger.error(message);
     const exception = type === 'image' ? EX.API_IMAGE_GENERATION_FAILED : EX.API_VIDEO_GENERATION_FAILED;
-    throw new APIException(exception, `${typeText}生成失败，状态码: ${status}${failCode ? `，错误码: ${failCode}` : ''}`);
+    const failCodeMessages: Record<string, string> = {
+      '4011': '素材中包含人脸，无法生成',
+      '2038': '文字不符合规则',
+      '2043': '视频生成失败',
+      '5000': '积分不足',
+      '2003': '内容违规',
+    };
+    const failReason = failCode ? (failCodeMessages[failCode] ?? `错误码: ${failCode}`) : null;
+    throw new APIException(exception, `${typeText}生成失败${failReason ? `，${failReason}` : ''}`);
   }
   
   /**
