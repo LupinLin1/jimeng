@@ -483,7 +483,6 @@ export async function generateVideo(
         if (audioFile) {
           const buf = await fs.readFile(audioFile.filepath);
           aResult = await uploadAudioBuffer(buf, refreshToken, regionInfo);
-          aResult = { ...aResult, name: audioFile.originalFilename || "" };
           const entry: MaterialEntry = {
             idx: materialIdx++,
             type: "audio",
